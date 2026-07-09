@@ -1,0 +1,184 @@
+# ============================================================================
+# OpenTelemetry Collector — DaemonSet
+# ============================================================================
+# ARCHITECTURE DECISION: DaemonSet over Deployment
+# We run the OTel collector as a DaemonSet (one per node) to collect
+# node-level metrics (kubelet, cAdvisor, node metrics) and forward them
+# to GCP Cloud Monitoring / Cloud Trace. A Deployment-based collector
+# would miss node-level signals.
+#
+# SECURITY SAFEGUARD: The collector runs with a dedicated service
+# account via Workload Identity, not the node's default SA.
+# ============================================================================
+
+apiVersion: opentelemetry.io/v1alpha1
+kind: OpenTelemetryCollector
+metadata:
+  name: otel-cluster
+  namespace: opentelemetry
+  labels:
+    app.kubernetes.io/name: otel-collector
+    app.kubernetes.io/component: observability
+    app.kubernetes.io/part-of: secondwave-platform
+spec:
+  mode: daemonset
+  serviceAccount: otel-collector
+
+  # ARCHITECTURE DECISION: contrib build
+  # The contrib build includes the GCP exporter and receiver components
+  # needed for Cloud Monitoring, Cloud Trace, and Cloud Logging export.
+  image: otel/opentelemetry-collector-contrib:0.102.0
+
+  # SECURITY SAFEGUARD: Resource limits prevent collector OOM from
+  # affecting other pods. The collector is CPU-bound under load.
+  resources:
+    limits:
+      cpu: 1
+      memory: 1Gi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+
+  # ARCHITECTURE DECISION: Multiple pipelines
+  # We run three separate pipelines (traces, metrics, logs) so each can
+  # be independently scaled and debugged. The batch processor improves
+  # export throughput by grouping spans/metrics.
+  config:
+    receivers:
+      hostmetrics:
+        collection_interval: 30s
+      kubeletstats:
+        collection_interval: 30s
+        auth_type: "serviceAccount"
+        endpoint: "https://${env:KUBERNETES_SERVICE_HOST}:10250"
+        insecure_skip_verify: true
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+      prometheus:
+        config:
+          scrape_configs:
+            - job_name: 'kubernetes-pods'
+              kubernetes_sd_configs:
+                - role: pod
+              relabel_configs:
+                - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+                  action: keep
+                  regex: true
+                - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+                  action: replace
+                  target_label: __metrics_path__
+                  regex: (.+)
+                - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+                  action: replace
+                  regex: ([^:]+)(?::\d+)?;(\d+)
+                  replacement: $$1:$$2
+                  target_label: __address__
+
+    processors:
+      batch:
+        timeout: 10s
+        send_batch_size: 1024
+      memory_limiter:
+        check_interval: 5s
+        limit_mib: 512
+        spike_limit_mib: 128
+      resourcedetection:
+        detectors: ["gcp", "eks"]
+        timeout: 10s
+      attributes:
+        actions:
+          - key: environment
+            value: "${ENVIRONMENT}"
+            action: upsert
+          - key: cluster_name
+            value: "${CLUSTER_NAME}"
+            action: upsert
+
+    exporters:
+      logging:
+        loglevel: info
+      googlecloud:
+        project: "${PROJECT_ID}"
+        metric:
+          prefix: "secondwave"
+        trace:
+          endpoint: "https://cloudtrace.googleapis.com"
+      prometheus:
+        endpoint: "0.0.0.0:8889"
+        namespace: "secondwave"
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch, resourcedetection, attributes]
+          exporters: [googlecloud, logging]
+        metrics:
+          receivers: [otlp, hostmetrics, kubeletstats, prometheus]
+          processors: [memory_limiter, batch, resourcedetection, attributes]
+          exporters: [googlecloud, prometheus, logging]
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, batch, resourcedetection, attributes]
+          exporters: [googlecloud, logging]
+
+  # ARCHITECTURE DECISION: Annotations for Prometheus scraping
+  # The collector exposes its own metrics for platform team monitoring
+  # of collector health and throughput.
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8888"
+    prometheus.io/path: "/metrics"
+
+  # SECURITY SAFEGUARD: Tolerate all taints so the collector runs on
+  # every node, including spot/preemptible and GPU nodes. This ensures
+  # monitoring coverage is complete.
+  tolerations:
+    - operator: "Exists"
+---
+# Service Account for the OTel collector
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: otel-collector
+  namespace: opentelemetry
+  annotations:
+    iam.gke.io/gcp-service-account: otel-collector-sa@${PROJECT_ID}.iam.gserviceaccount.com
+---
+# ClusterRole for the collector to read node/kubelet metrics
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: otel-collector
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "nodes/metrics", "nodes/stats", "nodes/spec"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods", "services", "endpoints"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - nonResourceURLs: ["/metrics"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: otel-collector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: otel-collector
+subjects:
+  - kind: ServiceAccount
+    name: otel-collector
+    namespace: opentelemetry

@@ -1,0 +1,355 @@
+{
+  "displayName": "GKE Cluster Overview — SecondWave",
+  "project": "${PROJECT_ID}",
+  "dashboardFilters": [
+    {
+      "filterType": "RESOURCE_LABEL",
+      "labelKey": "cluster_name",
+      "templateVariable": "cluster"
+    },
+    {
+      "filterType": "RESOURCE_LABEL",
+      "labelKey": "namespace",
+      "templateVariable": "namespace"
+    }
+  ],
+  "mosaicLayout": {
+    "tiles": [
+      {
+        "title": "Cluster CPU Utilization (%)",
+        "height": 4,
+        "width": 6,
+        "widget": {
+          "xyChart": {
+            "chartOptions": {
+              "mode": "COLOR"
+            },
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_MEAN",
+                      "crossSeriesReducer": "REDUCE_MEAN"
+                    },
+                    "filter": "metric.type=\"kubernetes.io/node/cpu/allocatable_utilization\" resource.labels.cluster_name=\"${cluster}\""
+                  }
+                },
+                "plotType": "LINE",
+                "targetAxis": "Y1"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "title": "Cluster Memory Utilization (%)",
+        "height": 4,
+        "width": 6,
+        "widget": {
+          "xyChart": {
+            "chartOptions": {
+              "mode": "COLOR"
+            },
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_MEAN",
+                      "crossSeriesReducer": "REDUCE_MEAN"
+                    },
+                    "filter": "metric.type=\"kubernetes.io/node/memory/allocatable_utilization\" resource.labels.cluster_name=\"${cluster}\""
+                  }
+                },
+                "plotType": "LINE",
+                "targetAxis": "Y1"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "title": "Node Pool CPU by Pool",
+        "height": 4,
+        "width": 4,
+        "widget": {
+          "xyChart": {
+            "chartOptions": {
+              "mode": "COLOR"
+            },
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_MEAN",
+                      "crossSeriesReducer": "REDUCE_MEAN",
+                      "groupByFields": [
+                        "metric.label.\"instance_group\""
+                      ]
+                    },
+                    "filter": "metric.type=\"kubernetes.io/node/cpu/allocatable_utilization\" resource.labels.cluster_name=\"${cluster}\""
+                  }
+                },
+                "plotType": "STACKED_BAR",
+                "targetAxis": "Y1"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "title": "Node Pool Memory by Pool",
+        "height": 4,
+        "width": 4,
+        "widget": {
+          "xyChart": {
+            "chartOptions": {
+              "mode": "COLOR"
+            },
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_MEAN",
+                      "crossSeriesReducer": "REDUCE_MEAN",
+                      "groupByFields": [
+                        "metric.label.\"instance_group\""
+                      ]
+                    },
+                    "filter": "metric.type=\"kubernetes.io/node/memory/allocatable_utilization\" resource.labels.cluster_name=\"${cluster}\""
+                  }
+                },
+                "plotType": "STACKED_BAR",
+                "targetAxis": "Y1"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "title": "Pod Restart Count (last 24h)",
+        "height": 4,
+        "width": 4,
+        "widget": {
+          "xyChart": {
+            "chartOptions": {
+              "mode": "COLOR"
+            },
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_RATE",
+                      "crossSeriesReducer": "REDUCE_SUM"
+                    },
+                    "filter": "metric.type=\"kubernetes.io/container/restart_count\" resource.labels.cluster_name=\"${cluster}\""
+                  }
+                },
+                "plotType": "LINE",
+                "targetAxis": "Y1"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "title": "API Server Latency (p99)",
+        "height": 4,
+        "width": 6,
+        "widget": {
+          "xyChart": {
+            "chartOptions": {
+              "mode": "COLOR"
+            },
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_PERCENTILE_99",
+                      "crossSeriesReducer": "REDUCE_MEAN"
+                    },
+                    "filter": "metric.type=\"kubernetes.io/apiserver/request_latencies\" resource.labels.cluster_name=\"${cluster}\""
+                  }
+                },
+                "plotType": "LINE",
+                "targetAxis": "Y1"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "title": "Node Count by Status",
+        "height": 4,
+        "width": 3,
+        "widget": {
+          "scorecard": {
+            "timeSeriesQuery": {
+              "timeSeriesFilter": {
+                "aggregation": {
+                  "alignmentPeriod": "60s",
+                  "perSeriesAligner": "ALIGN_MEAN",
+                  "crossSeriesReducer": "REDUCE_COUNT"
+                },
+                "filter": "metric.type=\"kubernetes.io/node/condition_ready\" resource.labels.cluster_name=\"${cluster}\" metric.label.\"condition\"=\"true\""
+              }
+            }
+          }
+        }
+      },
+      {
+        "title": "Workload Count by Namespace",
+        "height": 4,
+        "width": 3,
+        "widget": {
+          "xyChart": {
+            "chartOptions": {
+              "mode": "COLOR"
+            },
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_SUM",
+                      "crossSeriesReducer": "REDUCE_SUM",
+                      "groupByFields": [
+                        "resource.label.\"namespace\""
+                      ]
+                    },
+                    "filter": "metric.type=\"kubernetes.io/container/uptime\" resource.labels.cluster_name=\"${cluster}\""
+                  }
+                },
+                "plotType": "STACKED_BAR",
+                "targetAxis": "Y1"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "title": "Certificate Expiry (days remaining)",
+        "height": 4,
+        "width": 4,
+        "widget": {
+          "xyChart": {
+            "chartOptions": {
+              "mode": "COLOR"
+            },
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "aggregation": {
+                      "alignmentPeriod": "3600s",
+                      "perSeriesAligner": "ALIGN_MIN"
+                    },
+                    "filter": "metric.type=\"workload.googleapis.com/certmanager/certificate_expiry_seconds\" resource.labels.cluster_name=\"${cluster}\""
+                  }
+                },
+                "plotType": "LINE",
+                "targetAxis": "Y1"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "title": "Dropped Events (per second)",
+        "height": 4,
+        "width": 4,
+        "widget": {
+          "xyChart": {
+            "chartOptions": {
+              "mode": "COLOR"
+            },
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_RATE",
+                      "crossSeriesReducer": "REDUCE_SUM"
+                    },
+                    "filter": "metric.type=\"logging.googleapis.com/log_entry_count\" resource.labels.cluster_name=\"${cluster}\" metric.label.\"severity\"=\"ERROR\""
+                  }
+                },
+                "plotType": "LINE",
+                "targetAxis": "Y1"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "title": "Outbound Network Bandwidth",
+        "height": 4,
+        "width": 4,
+        "widget": {
+          "xyChart": {
+            "chartOptions": {
+              "mode": "COLOR"
+            },
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_RATE",
+                      "crossSeriesReducer": "REDUCE_SUM"
+                    },
+                    "filter": "metric.type=\"kubernetes.io/node/network/sent_bytes_count\" resource.labels.cluster_name=\"${cluster}\""
+                  }
+                },
+                "plotType": "LINE",
+                "targetAxis": "Y1"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "title": "Inbound Network Bandwidth",
+        "height": 4,
+        "width": 4,
+        "widget": {
+          "xyChart": {
+            "chartOptions": {
+              "mode": "COLOR"
+            },
+            "dataSets": [
+              {
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_RATE",
+                      "crossSeriesReducer": "REDUCE_SUM"
+                    },
+                    "filter": "metric.type=\"kubernetes.io/node/network/received_bytes_count\" resource.labels.cluster_name=\"${cluster}\""
+                  }
+                },
+                "plotType": "LINE",
+                "targetAxis": "Y1"
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}
