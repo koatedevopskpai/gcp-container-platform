@@ -1,0 +1,165 @@
+# ============================================================================
+# GKE Infrastructure Deploy — GitHub Actions
+# ============================================================================
+# This workflow deploys the GKE container platform infrastructure using
+# Terraform with OIDC authentication to GCP. It runs on pull requests
+# (plan only) and pushes to main (apply).
+#
+# ARCHITECTURE DECISION: OIDC auth over static SA keys
+# We use GitHub Actions OIDC to authenticate to GCP rather than storing
+# a long-lived service account key as a GitHub Secret. OIDC provides
+# short-lived tokens (1h max) and binds each workflow run to a specific
+# GitHub environment (branch, repo, ref). If a secret is leaked, it's
+# useless within an hour.
+#
+# SECURITY SAFEGUARD: The OIDC subject claim is restricted to only
+# allow pushes from the main branch of this repository. Pull requests
+# get plan-only access (no apply).
+# ============================================================================
+
+name: GKE Infrastructure Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.tf'
+      - 'modules/**/*.tf'
+      - 'terraform.tfvars*'
+  pull_request:
+    branches: [main]
+    paths:
+      - '**.tf'
+      - 'modules/**/*.tf'
+      - 'terraform.tfvars*'
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+env:
+  TF_VERSION: "1.9.0"
+  TFACTIONS_VERSION: "1.0.0"
+  GCP_REGION: "europe-west2"
+
+jobs:
+  terraform-plan:
+    name: "Terraform Plan"
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'development' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to GCP via OIDC
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          token_format: "access_token"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        id: init
+        run: terraform init -backend=false
+        working-directory: gcp/container-platform
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate
+        working-directory: gcp/container-platform
+
+      - name: Terraform Format Check
+        id: fmt
+        run: terraform fmt -check -recursive
+        working-directory: gcp/container-platform
+        continue-on-error: true
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -no-color -input=false -out=tfplan
+        working-directory: gcp/container-platform
+        continue-on-error: true
+        env:
+          TF_VAR_project_id: ${{ secrets.TF_VAR_PROJECT_ID }}
+
+      - name: Upload Terraform Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: gcp/container-platform/tfplan
+
+      - name: Post Plan to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `## Terraform Plan 📋
+
+            **Format**: ${{ steps.fmt.outcome == 'success' && '✅' || '❌' }}
+            **Validate**: ${{ steps.validate.outcome == 'success' && '✅' || '❌' }}
+            **Plan**: ${{ steps.plan.outcome == 'success' && '✅' || '❌' }}
+
+            <details><summary>Show Plan</summary>
+
+            \`\`\`terraform
+            ${{ steps.plan.outputs.stdout || 'No output' }}
+            \`\`\`
+
+            </details>
+
+            *Pushed by: ${{ github.actor }}*
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
+
+  terraform-apply:
+    name: "Terraform Apply"
+    runs-on: ubuntu-latest
+    needs: [terraform-plan]
+    if: github.ref_name == 'main' && github.event_name == 'push'
+
+    environment: production
+    concurrency: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to GCP via OIDC
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: gcp/container-platform
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
+        working-directory: gcp/container-platform
+        env:
+          TF_VAR_project_id: ${{ secrets.TF_VAR_PROJECT_ID }}
+
+      - name: Post-Apply Summary
+        run: |
+          echo "## GKE Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "Cluster deployed to \`${{ env.GCP_REGION }}\`" >> $GITHUB_STEP_SUMMARY

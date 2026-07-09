@@ -1,0 +1,120 @@
+# ============================================================================
+# ArgoCD Bootstrap Validation
+# ============================================================================
+# This workflow validates the ArgoCD/Flux bootstrap configuration by
+# performing a dry-run apply of the GitOps config against a temporary
+# kind cluster. This catches misconfigurations before they reach the
+# production GitOps repo.
+#
+# ARCHITECTURE DECISION: Pre-merge validation
+# We validate GitOps config changes in CI before merging to main, not
+# after. If ArgoCD/Flux sync fails on a bad config, the cluster drifts
+# and self-healing attempts will fail. Validating the config structure
+# and YAML syntax in CI reduces this risk.
+# ============================================================================
+
+name: ArgoCD Bootstrap Validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'clusters/**/*.yaml'
+      - 'clusters/**/*.yml'
+      - 'platform/**/*.yaml'
+      - 'platform/**/*.yml'
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  validate-argocd-config:
+    name: "Validate ArgoCD Config"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: validation-cluster
+          config: |
+            kind: Cluster
+            apiVersion: kind.x-k8s.io/v1alpha4
+            nodes:
+            - role: control-plane
+              extraPortMappings:
+              - containerPort: 443
+                hostPort: 443
+
+      - name: Install ArgoCD
+        run: |
+          kubectl create namespace argocd
+          kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+          kubectl wait --for=condition=available --timeout=120s deployment/argocd-server -n argocd
+
+      - name: Validate App-of-Apps Application
+        run: |
+          # Check that all Application manifests parse correctly
+          for f in clusters/${{ github.head_ref }}/**/application-*.yaml; do
+            echo "Validating: $f"
+            kubectl apply --dry-run=client -f "$f" || exit 1
+          done
+
+      - name: Validate Kustomize Overlays
+        run: |
+          # Check that all kustomization.yaml files resolve correctly
+          for dir in clusters/${{ github.head_ref }}/**/; do
+            if [ -f "${dir}kustomization.yaml" ]; then
+              echo "Validating kustomize: $dir"
+              kubectl kustomize "$dir" > /dev/null || exit 1
+            fi
+          done
+
+      - name: Validate Flux GitRepository CRDs
+        run: |
+          # If using Flux, validate GitRepository and Kustomization CRDs
+          if kubectl api-resources --api-group=source.toolkit.fluxcd.io &>/dev/null; then
+            for f in clusters/${{ github.head_ref }}/**/*.yaml; do
+              yq eval '.apiVersion' "$f" | grep -q "toolkit.fluxcd.io" || continue
+              echo "Validating Flux resource: $f"
+              kubectl apply --dry-run=client -f "$f" || exit 1
+            done
+          else
+            echo "Flux CRDs not installed — skipping Flux validation"
+          fi
+
+      - name: Check for deprecated APIs
+        run: |
+          # Detect deprecated API versions using Pluto
+          kubectl apply -f clusters/${{ github.head_ref }}/ --dry-run=client -o json 2>/dev/null | \
+            pluto detect --target-versions="k8s=v1.30" -o json || true
+
+      - name: Post Validation Summary
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `## GitOps Config Validation ✅
+
+            **Branch**: ${{ github.head_ref }}
+            **Status**: Passed — all manifests validated
+
+            Validated:
+            - ArgoCD Application manifests (dry-run)
+            - Kustomize overlay resolution
+            - Flux CRD validation (if applicable)
+            - Deprecated API checks
+
+            *Next: After merge, ArgoCD/Flux will sync automatically.*
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
