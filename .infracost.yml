@@ -1,0 +1,53 @@
+# ============================================================================
+# Infracost Configuration — Cloud Cost Estimation
+# ============================================================================
+# ARCHITECTURE DECISION: Infracost for Cost Awareness
+# Infracost estimates monthly cloud costs from Terraform plans. This
+# ensures every infrastructure change includes a cost impact assessment.
+# Running Infracost on PRs prevents surprise cost increases.
+#
+# We estimate costs for three environments but only enforce budgets
+# on production.
+# ============================================================================
+
+version: 0.1
+
+projects:
+  - path: .
+    name: secondwave-gke-platform
+    usage_file: .infracost-usage.yml
+
+  - path: modules/gke-cluster
+    name: gke-cluster
+
+  - path: modules/gke-node-pools
+    name: gke-node-pools
+
+# ARCHITECTURE DECISION: Cost breakdown by environment
+# We tag resources with `environment` to let Infracost break down costs
+# per environment. This helps the platform team identify cost drivers
+# per environment.
+---
+
+# Format: https://www.infracost.io/docs/features/usage_based_resources/
+version: 0.1
+resource_usage:
+  # GKE cluster
+  google_container_cluster:
+    primary:
+      # Regional cluster costing
+      monthly_hrs: 730
+
+  # Node pools
+  google_container_node_pool:
+    "*.pools":
+      # Assume 70% utilisation for cost estimation
+      monthly_hrs: 438  # 730 * 0.6
+
+  # Artifact Registry
+  google_artifact_registry_repository:
+    "*":
+      storage_gb: 100
+      monthly_egress_gb:
+        - 500  # Intra-region
+        - 50   # Inter-region

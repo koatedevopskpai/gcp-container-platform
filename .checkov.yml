@@ -1,0 +1,58 @@
+# ============================================================================
+# Checkov Configuration — IaC Security Scanning
+# ============================================================================
+# Checkov scans Terraform configurations for security misconfigurations.
+# This is part of SecondWave's "shift-left" security strategy — catch
+# issues before they reach production.
+#
+# ARCHITECTURE DECISION: Checkov over tfsec
+# Both Checkov and tfsec are excellent. Checkov has a broader rule set
+# (500+ vs 150+) and supports Kubernetes YAML scanning, which let us
+# validate both Terraform and the Kyverno policies with one tool.
+# ============================================================================
+
+# SECURITY SAFEGUARD: Skip only with documented exceptions
+# Every skipped check must have a comment explaining why.
+# No skipping for CKV_GCP_* (GCP-specific) checks without approval.
+
+# Skip list — only checks that are not applicable to this repo
+quiet: true
+skip-check:
+  # CKV_GCP_11: Ensure VPC Flow Logs is enabled
+  # Skipped: Flow logs are enabled at the VPC level, not in the GKE module.
+  # The VPC is managed in a separate networking repo.
+  - CKV_GCP_11
+
+  # CKV_GCP_30: Ensure a client certificate is used
+  # Skipped: We use OIDC tokens, not client certificates, for auth.
+  # Client certificates are disabled for security reasons.
+  - CKV_GCP_30
+
+  # CKV_GCP_64: Ensure GKE clusters are not created with Kubernetes
+  #   Dashboard enabled — verified via 'disabled = true' in addons_config
+  #   Internal check covers this during plan stage.
+
+  # CKV_GCP_66: Ensure binary authorization is enabled
+  # Skipped for dev/staging — only enforced in prod via variable.
+  # Checkov runs against the template, not the resolved value.
+  - CKV_GCP_66
+
+# Custom soft-fail checks — these generate warnings, not failures
+soft_fail:
+  - CKV_GCP_66  # Binary Authorization — environment-dependent
+
+# Framework scanning
+framework:
+  - terraform
+  - kubernetes
+
+# Output format
+output:
+  - cli
+  - junitxml
+  - sarif
+
+# ARCHITECTURE DECISION: SARIF output for GitHub
+# SARIF output integrates with GitHub's code scanning UI, showing
+# violations inline on pull requests. This gives developers immediate
+# feedback on security issues.
