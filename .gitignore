@@ -1,0 +1,69 @@
+# ============================================================================
+# .gitignore — GCP Container Platform
+# ============================================================================
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+!terraform.tfvars.example
+crash.log
+crash.*.log
+
+# CLI config files
+.terraformrc
+terraform.rc
+
+# Secrets
+*.pem
+*.key
+*.p12
+*.cert
+**/secrets/
+**/auth.json
+**/credentials.json
+**/*.kubeconfig
+**/kubeconfig-*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Project local
+.env
+.env.local
+.env.*.local
+
+# Build output
+*.tfplan.binary
+override.tf
+override.tf.json
+terraform.tfstate.backup
+
+# Dependency directories
+vendor/
+
+# Go test binary
+*.test
+*.test.exe
+tests/terratest/
+
+# Infra cost
+.infracost-usage.yml
+
+# Logs
+*.log
+/tests/*.log
+
+# asdf
+.tool-versions.old

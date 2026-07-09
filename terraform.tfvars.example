@@ -1,0 +1,92 @@
+# ============================================================================
+# SecondWave GCP Container Platform — Terraform Example Variables
+# ============================================================================
+# Copy this file to terraform.tfvars and adjust for your environment.
+# Do NOT commit terraform.tfvars to version control.
+# ============================================================================
+
+project_id            = "secondwave-platform-prod"
+region                = "europe-west2"
+cluster_name          = "secondwave-gke"
+kubernetes_version    = "1.30"
+environment           = "prod"
+
+release_channel       = "STABLE"
+
+# Node pools — each environment gets a tailored set
+node_pools = {
+  general = {
+    machine_type = "e2-standard-4"
+    min_count    = 3
+    max_count    = 15
+    disk_size_gb = 100
+    spot         = false
+    labels       = { workload = "general" }
+    taints       = []
+  }
+  spot-worker = {
+    machine_type = "e2-standard-8"
+    min_count    = 0
+    max_count    = 20
+    disk_size_gb = 100
+    spot         = true
+    labels       = { workload = "batch", cost = "spot" }
+    taints = [
+      {
+        key    = "cloud.google.com/gke-spot"
+        value  = "true"
+        effect = "NO_SCHEDULE"
+      }
+    ]
+  }
+  memory-optimised = {
+    machine_type = "e2-highmem-16"
+    min_count    = 2
+    max_count    = 8
+    disk_size_gb = 200
+    spot         = false
+    labels       = { workload = "data-plane" }
+    taints = [
+      {
+        key    = "workload"
+        value  = "data-plane"
+        effect = "NO_SCHEDULE"
+      }
+    ]
+  }
+}
+
+vpc_network                 = "secondwave-vpc"
+vpc_subnet                  = "secondwave-europe-west2"
+master_ipv4_cidr_block      = "10.0.0.0/28"
+pods_ipv4_cidr              = "10.1.0.0/16"
+services_ipv4_cidr          = "10.2.0.0/20"
+
+master_authorized_networks = [
+  { cidr_block = "10.100.0.0/24", display_name = "vpn-peering" },
+  { cidr_block = "10.200.0.0/24", display_name = "cloud-build" },
+]
+
+# CMEK — key must exist in the same region
+cmek_key_name = "projects/secondwave-platform-prod/locations/europe-west2/keyRings/gke/cryptoKeys/gke-cmek"
+
+artifact_registry_location = "europe"
+
+gitops_tool                = "argo"
+gitops_repo_url            = "git@github.com:secondwave/gitops-config.git"
+
+domain_name                = "secondwave.io"
+external_dns_enabled       = true
+cert_manager_email         = "platform@secondwave.io"
+
+cloud_armor_enabled        = true
+binary_authorization_enabled = true
+enable_vertical_pod_autoscaling = true
+enable_node_auto_provisioning   = true
+
+tags = {
+  managed_by  = "terraform"
+  repository  = "gcp-container-platform"
+  environment = "prod"
+  cost_center = "platform"
+}
