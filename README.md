@@ -1,6 +1,6 @@
 # SecondWave GCP Container Platform
 
-**Enterprise-grade GKE + GitOps platform for fintech workloads**
+**GKE + GitOps platform for fintech workloads**
 
 ---
 
